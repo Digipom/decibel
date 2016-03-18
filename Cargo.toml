@@ -1,6 +1,6 @@
 [package]
 name = "decibel"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Kevin Brothaler <contact@digipom.com>"]
 description = "Quick conversion utilities for decibel values"
 keywords = ["audio", "decibel", "sample", "amplitude", "dsp"]
@@ -9,4 +9,3 @@ homepage = "https://github.com/Digipom/decibel"
 repository = "https://github.com/Digipom/decibel"
 
 [dependencies]
-num = "0.1.31"

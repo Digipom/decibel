@@ -12,100 +12,102 @@
 
 //! Conversion utilities to convert between amplitudes and decibels.
 //!
-//! See also: [Decibel][1] and [dBFS][2]
+//! See also: [Decibel][1] and [dBFS][2].
 //! [1]: https://en.wikipedia.org/wiki/Decibel
 //! [2]: https://en.wikipedia.org/wiki/DBFS
+//!
+//! # Converting amplitude values into decibel values
+//!
+//! To convert from an amplitude into a decibel value, call `into()` on the
+//! `AmplitudeRatio`.
+//!
+//! When used for normalized amplitudes in the range of 0 to 1, this will give
+//! the value in dBFS (decibels relative to full scale).
+//!
+//! ## Example
+//!
+//! ```rust
+//! extern crate decibel;
+//!
+//! use decibel::{AmplitudeRatio, DecibelRatio};
+//!
+//! fn main() {
+//!     // An amplitude halfway between 1 and zero should be close to -6 dBFS.
+//!     let result: DecibelRatio<_> = AmplitudeRatio(0.5).into();
+//!     let expected_decibels = -6.02059991327962;
+//!     assert!(result.decibel_value() >= expected_decibels - 0.001
+//!          && result.decibel_value() <= expected_decibels + 0.001);
+//! }
+//! ```
+//!
+//! # Converting decibel values into amplitude values
+//!
+//! To convert from a decibel value into an amplitude, call `into()` on the
+//! `DecibelRatio`.
+//!
+//! ## Example
+//!
+//! Let's say we want to scale our audio by 10dB. To figure out how much we
+//! need to scale each sample by, let's convert this into an amplitude ratio:
+//!
+//! ```rust
+//! extern crate decibel;
+//!
+//! use decibel::{AmplitudeRatio, DecibelRatio};
+//!
+//! fn main() {
+//!     // A +10dB gain should require us to scale each sample by around
+//!     // 3.1622776601683795.
+//!     let result: AmplitudeRatio<_> = DecibelRatio(10.0).into();
+//!     let expected_amplitude = 3.1622776601683795;
+//!     assert!(result.amplitude_value() >= expected_amplitude - 0.001
+//!          && result.amplitude_value() <= expected_amplitude + 0.001);
+//! }
+//! ```
+//!
+//! To scale our audio by 10dB, we need to scale each sample by approximately
+//! 3.162 times.
 
 #![warn(missing_docs)]
 
-extern crate num;
-
-use num::traits::Float;
-
 /// An amplitude value.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct AmplitudeRatio<T: Float>(pub T);
+pub struct AmplitudeRatio<T: Copy>(pub T);
 
 /// A decibel value.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct DecibelRatio<T: Float>(pub T);
+pub struct DecibelRatio<T: Copy>(pub T);
 
-/// We require this to work around an issue with the constants.
-pub trait Constants: Float {
-    /// Returns the value "10".
-    fn get_10() -> Self;
-    /// Returns the value "20".
-    fn get_20() -> Self;
-}
 
-impl Constants for f32 {
-    fn get_10() -> f32 { 10f32 }
-    fn get_20() -> f32 { 20f32 }
-}
-
-impl Constants for f64 {
-    fn get_10() -> f64 { 10f64 }
-    fn get_20() -> f64 { 20f64 }
-}
-
-/// Converts from an amplitude into a decibel value.
-///
-/// When used for normalized amplitudes in the range of 0 to 1, this will give
-/// the value in dBFS (decibels relative to full scale).
-///
-/// # Example
-///
-/// ```rust
-/// extern crate decibel;
-///
-/// use decibel::{AmplitudeRatio, DecibelRatio};
-///
-/// fn main() {
-///		// An amplitude halfway between 1 and zero should be close to -6 dBFS.
-/// 	let result: DecibelRatio<_> = AmplitudeRatio(0.5).into();
-/// 	let expected_decibels = -6.02059991327962;
-///		assert!(result.decibel_value() >= expected_decibels - 0.001
-/// 		 && result.decibel_value() <= expected_decibels + 0.001);
-/// }
-impl<T: Float+Constants> From<AmplitudeRatio<T>> for DecibelRatio<T> {
-    #[inline]
-    fn from(amplitude: AmplitudeRatio<T>) -> DecibelRatio<T> {
-        DecibelRatio(Float::log10(amplitude.amplitude_value()) * Constants::get_20())
+macro_rules! impl_from_amplitude_ratio {
+    ($T: ty) => {        
+        impl From<AmplitudeRatio<$T>> for DecibelRatio<$T> {
+            #[inline]
+            fn from(amplitude: AmplitudeRatio<$T>) -> DecibelRatio<$T> {
+                DecibelRatio(<$T>::log10(amplitude.amplitude_value()) * 20.0)
+            }
+        }                    
     }
 }
 
-/// Converts from a decibel value into an amplitude.
-///
-/// # Example
-///
-/// Let's say we want to scale our audio by 10dB. To figure out how much we
-/// need to scale each sample by, let's convert this into an amplitude ratio:
-///
-/// ```rust
-/// extern crate decibel;
-///
-/// use decibel::{AmplitudeRatio, DecibelRatio};
-///
-/// fn main() {
-///		// A +10dB gain should require us to scale each sample by around
-/// 	// 3.1622776601683795.
-/// 	let result: AmplitudeRatio<_> = DecibelRatio(10.0).into();
-/// 	let expected_amplitude = 3.1622776601683795;
-///		assert!(result.amplitude_value() >= expected_amplitude - 0.001
-/// 		 && result.amplitude_value() <= expected_amplitude + 0.001);
-/// }
-/// ```
-///
-/// To scale our audio by 10dB, we need to scale each sample by approximately
-/// 3.162 times.
-impl<T: Float+Constants> From<DecibelRatio<T>> for AmplitudeRatio<T> {
-    #[inline]
-    fn from(decibels: DecibelRatio<T>) -> AmplitudeRatio<T> {
-        AmplitudeRatio(T::powf(Constants::get_10(), decibels.decibel_value() / Constants::get_20()))
+impl_from_amplitude_ratio!(f32);
+impl_from_amplitude_ratio!(f64);
+
+macro_rules! impl_from_decibel_ratio {
+    ($T: ty) => {        
+        impl From<DecibelRatio<$T>> for AmplitudeRatio<$T> {
+            #[inline]
+            fn from(decibels: DecibelRatio<$T>) -> AmplitudeRatio<$T> {
+                AmplitudeRatio(<$T>::powf(10.0, decibels.decibel_value() / 20.0))
+            }
+        }                    
     }
 }
 
-impl<T: Float> AmplitudeRatio<T> {
+impl_from_decibel_ratio!(f32);
+impl_from_decibel_ratio!(f64);
+
+impl<T: Copy> AmplitudeRatio<T> {
     /// Returns the wrapped amplitude value.
     #[inline]
     pub fn amplitude_value(&self) -> T {
@@ -113,7 +115,7 @@ impl<T: Float> AmplitudeRatio<T> {
     }
 }
 
-impl<T: Float> DecibelRatio<T> {
+impl<T: Copy> DecibelRatio<T> {
     /// Returns the wrapped decibel value.
     #[inline]
     pub fn decibel_value(&self) -> T {
