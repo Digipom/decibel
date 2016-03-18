@@ -18,11 +18,35 @@
 
 #![warn(missing_docs)]
 
+extern crate num;
+
+use num::traits::Float;
+
 /// An amplitude value.
-pub struct AmplitudeRatio<T: Copy>(pub T);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct AmplitudeRatio<T: Float>(pub T);
 
 /// A decibel value.
-pub struct DecibelRatio<T: Copy>(pub T);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct DecibelRatio<T: Float>(pub T);
+
+/// We require this to work around an issue with the constants.
+pub trait Constants: Float {
+    /// Returns the value "10".
+    fn get_10() -> Self;
+    /// Returns the value "20".
+    fn get_20() -> Self;
+}
+
+impl Constants for f32 {
+    fn get_10() -> f32 { 10f32 }
+    fn get_20() -> f32 { 20f32 }
+}
+
+impl Constants for f64 {
+    fn get_10() -> f64 { 10f64 }
+    fn get_20() -> f64 { 20f64 }
+}
 
 /// Converts from an amplitude into a decibel value.
 ///
@@ -43,10 +67,10 @@ pub struct DecibelRatio<T: Copy>(pub T);
 ///		assert!(result.decibel_value() >= expected_decibels - 0.001
 /// 		 && result.decibel_value() <= expected_decibels + 0.001);
 /// }
-impl From<AmplitudeRatio<f32>> for DecibelRatio<f32> {
+impl<T: Float+Constants> From<AmplitudeRatio<T>> for DecibelRatio<T> {
     #[inline]
-    fn from(amplitude: AmplitudeRatio<f32>) -> DecibelRatio<f32> {
-        DecibelRatio(f32::log10(amplitude.amplitude_value()) * 20.0)
+    fn from(amplitude: AmplitudeRatio<T>) -> DecibelRatio<T> {
+        DecibelRatio(Float::log10(amplitude.amplitude_value()) * Constants::get_20())
     }
 }
 
@@ -74,14 +98,14 @@ impl From<AmplitudeRatio<f32>> for DecibelRatio<f32> {
 ///
 /// To scale our audio by 10dB, we need to scale each sample by approximately
 /// 3.162 times.
-impl From<DecibelRatio<f32>> for AmplitudeRatio<f32> {
+impl<T: Float+Constants> From<DecibelRatio<T>> for AmplitudeRatio<T> {
     #[inline]
-    fn from(decibels: DecibelRatio<f32>) -> AmplitudeRatio<f32> {
-        AmplitudeRatio(f32::powf(10.0, decibels.decibel_value() / 20.0))
+    fn from(decibels: DecibelRatio<T>) -> AmplitudeRatio<T> {
+        AmplitudeRatio(T::powf(Constants::get_10(), decibels.decibel_value() / Constants::get_20()))
     }
 }
 
-impl<T: Copy> AmplitudeRatio<T> {
+impl<T: Float> AmplitudeRatio<T> {
     /// Returns the wrapped amplitude value.
     #[inline]
     pub fn amplitude_value(&self) -> T {
@@ -89,8 +113,8 @@ impl<T: Copy> AmplitudeRatio<T> {
     }
 }
 
-impl<T: Copy> DecibelRatio<T> {
-    /// Returns the wrapped decible value.
+impl<T: Float> DecibelRatio<T> {
+    /// Returns the wrapped decibel value.
     #[inline]
     pub fn decibel_value(&self) -> T {
         self.0
@@ -98,30 +122,41 @@ impl<T: Copy> DecibelRatio<T> {
 }
 
 #[cfg(test)]
-mod test {
-    use std::f32;
+mod test {    
+    use std::{f32, f64};
     use AmplitudeRatio;
     use DecibelRatio;
 
     #[test]
-    fn test_decibels_to_amplitude_with_different_values() {
+    fn test_decibels_to_amplitude_with_different_values_f32() {
         // A dB of 0 should map to an amplitude of 1.0.
-        test_decibels_to_amplitude(0.0, 1.0);
+        test_decibels_to_amplitude_f32(0.0, 1.0);
+        test_decibels_to_amplitude_f64(0.0, 1.0);
 
-        // An amplitude halfway between 1 and zero should be close to -6dB.
-        test_decibels_to_amplitude(-6.02059991327962, 0.5);
+        // A dB of around -6dB should be around an amplitude of 0.5.
+        test_decibels_to_amplitude_f32(-6.02059991327962, 0.5);
+        test_decibels_to_amplitude_f64(-6.02059991327962, 0.5);
 
-        // An amplitude halfway between 1 and zero should be close to +6dB.
-        test_decibels_to_amplitude(6.02059991327962, 2.0);
+        // A dB of around +6dB should be an amplitude of around 2.0.
+        test_decibels_to_amplitude_f32(6.02059991327962, 2.0);
+        test_decibels_to_amplitude_f64(6.02059991327962, 2.0);
 
         // +1 or -1 in a 16-bit signed sample should be approximately -90.3dB.
-        test_decibels_to_amplitude(-90.30873362169473, 1.0 / 32767.0);
+        test_decibels_to_amplitude_f32(-90.30873362169473, 1.0 / 32767.0);
+        test_decibels_to_amplitude_f64(-90.30873362169473, 1.0 / 32767.0);
 
-        // 0 is a special case. We should get an infinity.
-        test_decibels_to_amplitude(f32::NEG_INFINITY, 0.0);
+        // A dB of negative infinity should map to an amplitude of zero.
+        test_decibels_to_amplitude_f32(f32::NEG_INFINITY, 0.0);
+        test_decibels_to_amplitude_f64(f64::NEG_INFINITY, 0.0);
     }
 
-    fn test_decibels_to_amplitude(decibels: f32, expected_amplitude: f32) {
+    fn test_decibels_to_amplitude_f32(decibels: f32, expected_amplitude: f32) {
+        let result: AmplitudeRatio<_> = DecibelRatio(decibels).into();
+        assert!(result.amplitude_value() >= expected_amplitude - 0.001 &&
+                result.amplitude_value() <= expected_amplitude + 0.001);
+    }
+
+    fn test_decibels_to_amplitude_f64(decibels: f64, expected_amplitude: f64) {
         let result: AmplitudeRatio<_> = DecibelRatio(decibels).into();
         assert!(result.amplitude_value() >= expected_amplitude - 0.001 &&
                 result.amplitude_value() <= expected_amplitude + 0.001);
@@ -130,26 +165,37 @@ mod test {
     #[test]
     fn test_amplitude_to_decibels_with_different_values() {
         // An amplitude at the peak should be 0 dBFS.
-        test_amplitude_to_decibels(1.0, 0.0);
+        test_amplitude_to_decibels_f32(1.0, 0.0);        
+        test_amplitude_to_decibels_f64(1.0, 0.0);        
 
         // An amplitude halfway between 1 and zero should be close to -6 dBFS.
-        test_amplitude_to_decibels(0.5, -6.02059991327962);
+        test_amplitude_to_decibels_f32(0.5, -6.02059991327962);
+        test_amplitude_to_decibels_f64(0.5, -6.02059991327962);
 
         // A double amplitude should be close to +6 dBFS.
         // Note that we can't actually get an amplitude higher than 1 from the
         // hardware if 1 represents the max amplitude possible.
-        test_amplitude_to_decibels(2.0, 6.02059991327962);
+        test_amplitude_to_decibels_f32(2.0, 6.02059991327962);
+        test_amplitude_to_decibels_f64(2.0, 6.02059991327962);
 
         // +1 or -1 in a 16-bit signed sample should be approximately -90.3 dBFS.
-        test_amplitude_to_decibels(1.0 / 32767.0, -90.30873362169473);
+        test_amplitude_to_decibels_f32(1.0 / 32767.0, -90.30873362169473);
+        test_amplitude_to_decibels_f64(1.0 / 32767.0, -90.30873362169473);
 
         // 0 is a special case. We should get an infinity.
-        test_amplitude_to_decibels(0.0, f32::NEG_INFINITY);
+        test_amplitude_to_decibels_f32(0.0, f32::NEG_INFINITY);
+        test_amplitude_to_decibels_f64(0.0, f64::NEG_INFINITY);
+    }   
+
+    fn test_amplitude_to_decibels_f32(amplitude: f32, expected_decibels: f32) {
+        let result: DecibelRatio<_> = AmplitudeRatio(amplitude).into();
+                assert!(result.decibel_value() >= expected_decibels - 0.001 &&
+                        result.decibel_value() <= expected_decibels + 0.001);
     }
 
-    fn test_amplitude_to_decibels(amplitude: f32, expected_decibels: f32) {
+    fn test_amplitude_to_decibels_f64(amplitude: f64, expected_decibels: f64) {
         let result: DecibelRatio<_> = AmplitudeRatio(amplitude).into();
-        assert!(result.decibel_value() >= expected_decibels - 0.001 &&
-                result.decibel_value() <= expected_decibels + 0.001);
-    }
+                assert!(result.decibel_value() >= expected_decibels - 0.001 &&
+                        result.decibel_value() <= expected_decibels + 0.001);
+    } 
 }
